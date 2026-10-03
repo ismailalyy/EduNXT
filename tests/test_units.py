@@ -35,9 +35,26 @@ def test_profile_merge_and_completeness():
 def test_partner_search(settings):
     rows = load_partners(settings.partners_csv)
     assert validate_partners(settings.partners_csv) == []
-    assert len(search_partners(rows, ["England"], "Psychology")) == 10
-    assert search_partners(rows, ["Germany"], "Psychology") == []
-    assert search_partners(rows, ["UK"], "Medicine") == []
+
+    def matches(countries, course):
+        return [r for r in search_partners(rows, countries, course) if r["course_match"]]
+
+    psychology = matches(["England"], "Psychology")
+    assert len(psychology) == 10 and not any(r["partner"] for r in psychology)
+    assert matches(["Germany"], "Psychology") == []
+    assert search_partners(rows, ["Japan"], "Psychology") == []
+
+    europe_ee = search_partners(rows, ["Europe"], "Electrical Engineering")
+    assert not any(r["country"] == "Canada" for r in europe_ee)
+    assert "Digital Systems & Design BSc" in [r["course"] for r in europe_ee]  # non-matching name still offered
+    assert all(r["course_match"] for r in europe_ee[:12])  # course matches are listed first
+    assert len(matches(["Canada"], "Electrical Engineering")) == 10
+
+    eu_medicine = matches(["EU"], "Medicine")
+    assert {r["country"] for r in eu_medicine} == {"Italy", "Bulgaria"} and len(eu_medicine) == 8
+    # "EU" excludes the UK; "Europe" includes it
+    assert not any(r["country"] == "United Kingdom" for r in search_partners(rows, ["EU"], "Events Management"))
+    assert any(r["country"] == "United Kingdom" for r in matches(["Europe"], "Events Management"))
 
 
 # ---------------------------------------------------------------- whatsapp

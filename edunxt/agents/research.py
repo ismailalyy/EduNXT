@@ -70,7 +70,9 @@ SCHOLARSHIP_ITEM = {
 LOOKUP_TOOL = _strict(
     "lookup_partner_universities",
     "Search EduNXT's own university sheet. Rows with partner=true pay EduNXT commission and should be "
-    "included whenever they fit the student. Returns a JSON list of rows.",
+    "included whenever they fit the student. Countries may be regions such as 'Europe' or 'EU'. Returns a JSON "
+    "list of rows in those countries; course_match=true rows share a word with the course, but check the others "
+    "too, since programme names vary.",
     {"countries": {"type": "array", "items": _STR}, "course": _STR},
 )
 SUBMIT_LIST_TOOL = _strict(

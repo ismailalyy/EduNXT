@@ -36,6 +36,33 @@ def cmd_check_setup(args) -> None:
     sys.exit(0 if check_setup(load_settings(), normalize_phone(args.send_test) or None) else 1)
 
 
+def cmd_benchmark(args) -> None:
+    from .agents.intake import IntakeAgent
+    from .agents.llm import make_client
+    from .agents.research import ResearchAgent
+    from .benchmark import run_benchmark
+    from .documents.render import render_pdfs
+
+    settings = load_settings()
+    client = make_client(settings.anthropic_api_key)
+    intake = IntakeAgent(client, settings.intake_model)
+
+    def make_research(partners_csv):
+        return ResearchAgent(client, settings.research_model, partners_csv, settings.research_effort)
+
+    out = run_benchmark(
+        settings,
+        intake,
+        make_research,
+        render_pdfs,
+        case_ids=args.cases.split(",") if args.cases else None,
+        with_partners=args.with_partners,
+        parallel=args.parallel,
+    )
+    print((out / "summary.md").read_text(encoding="utf-8"))
+    print(f"\nFull results: {out}")
+
+
 def cmd_chat(args) -> None:
     """Play client and founder in the terminal; the full workflow runs with a simulated WhatsApp."""
     from .app import build_workflow
@@ -110,6 +137,12 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("chat", help="simulate WhatsApp in the terminal")
     p.add_argument("--as", dest="role", choices=["client", "founder"], default="client")
     p.set_defaults(func=cmd_chat)
+
+    p = sub.add_parser("benchmark", help="run real cases and measure cost, time and overlap with consultants")
+    p.add_argument("--cases", default="", help="comma-separated case ids (default: all)")
+    p.add_argument("--with-partners", action="store_true", help="keep each case's own rows in the partner sheet")
+    p.add_argument("--parallel", type=int, default=2, help="cases to run at once")
+    p.set_defaults(func=cmd_benchmark)
 
     p = sub.add_parser("render-sample", help="render the example case PDFs")
     p.set_defaults(func=cmd_render_sample)

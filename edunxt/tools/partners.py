@@ -10,6 +10,7 @@ import csv
 from pathlib import Path
 
 COLUMNS = ["university", "country", "course", "degree_level", "fees", "requirements", "scholarships", "partner", "url"]
+# Optional extra columns (e.g. deadline, notes) are passed to the agent unchanged.
 
 # Common aliases so "UK" or "England" in a profile still matches "United Kingdom" rows.
 COUNTRY_ALIASES = {
@@ -27,9 +28,30 @@ COUNTRY_ALIASES = {
 }
 
 
+EU_MEMBERS = {
+    "austria", "belgium", "bulgaria", "croatia", "cyprus", "czechia", "denmark", "estonia", "finland",
+    "france", "germany", "greece", "hungary", "ireland", "italy", "latvia", "lithuania", "luxembourg",
+    "malta", "netherlands", "poland", "portugal", "romania", "slovakia", "slovenia", "spain", "sweden",
+}
+# Students often name a region rather than a country.
+REGIONS = {
+    "eu": EU_MEMBERS,
+    "european union": EU_MEMBERS,
+    "europe": EU_MEMBERS | {"united kingdom", "switzerland", "norway", "iceland", "serbia", "north macedonia", "albania"},
+}
+
+
 def _country_key(name: str) -> str:
     key = name.strip().lower()
     return COUNTRY_ALIASES.get(key, key)
+
+
+def _wanted_countries(countries: list[str]) -> set[str]:
+    wanted: set[str] = set()
+    for country in countries:
+        key = _country_key(country)
+        wanted |= REGIONS.get(key, {key})
+    return wanted
 
 
 def load_partners(path: Path) -> list[dict]:
@@ -58,18 +80,17 @@ def validate_partners(path: Path) -> list[str]:
 
 
 def search_partners(rows: list[dict], countries: list[str], course: str = "") -> list[dict]:
-    """Rows in any of ``countries`` whose course shares a word with ``course``.
-
-    Matching is deliberately loose; the Research Agent decides what actually fits.
+    """Rows in any of ``countries``. Rows whose course shares a word with ``course`` come first
+    and carry ``course_match=True``; the rest are included because names differ ("Digital
+    Systems & Design" is an electrical-engineering option). The Research Agent decides what fits.
     """
-    wanted = {_country_key(c) for c in countries if c.strip()}
+    wanted = _wanted_countries([c for c in countries if c.strip()])
     words = {w for w in course.lower().replace("/", " ").split() if len(w) > 3}
     results = []
     for row in rows:
         if wanted and _country_key(row.get("country", "")) not in wanted:
             continue
-        if words and not words & set(row.get("course", "").lower().replace("/", " ").split()):
-            continue
-        results.append(row)
-    results.sort(key=lambda r: not r["partner"])
+        row_words = set(row.get("course", "").lower().replace("/", " ").split())
+        results.append({**row, "course_match": not words or bool(words & row_words)})
+    results.sort(key=lambda r: (not r["course_match"], not r["partner"]))
     return results

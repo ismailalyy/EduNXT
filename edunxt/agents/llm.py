@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from dataclasses import dataclass, field
 from importlib import resources
@@ -21,7 +22,12 @@ WEB_SEARCH_PRICE = 10.00 / 1000  # per search request
 
 
 def make_client(api_key: str = "") -> anthropic.Anthropic:
-    return anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
+    if not api_key:
+        return anthropic.Anthropic()  # other credential sources, e.g. workload identity federation
+    # With an explicit key, talk to the public API even if the shell sets ANTHROPIC_BASE_URL for
+    # something else (Claude Code cloud sessions do). EDUNXT_ANTHROPIC_BASE_URL overrides.
+    base_url = os.environ.get("EDUNXT_ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+    return anthropic.Anthropic(api_key=api_key, base_url=base_url)
 
 
 def load_prompt(name: str) -> str:

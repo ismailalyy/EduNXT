@@ -191,7 +191,10 @@ class Workflow:
 
     def _handle_founder(self, msg: InboundMessage) -> None:
         founder = msg.phone
-        self._flush_pending(founder)
+        if self._flush_pending(founder):
+            # This message was the founder answering our template ("cases", "ok", ...): it only
+            # reopened the window, so don't also treat it as an instruction for a case.
+            return
         text = (msg.text or "").strip()
         low = text.lower()
         if not text:
@@ -432,7 +435,8 @@ class Workflow:
         except SendError as exc:
             log.error("Could not send template to founder %s: %s", founder, exc)
 
-    def _flush_pending(self, founder: str) -> None:
+    def _flush_pending(self, founder: str) -> int:
+        """Deliver messages held while the founder's 24h window was closed; returns how many."""
         with self.store.session.begin() as s:
             pending = s.scalars(
                 select(MessageLog).where(MessageLog.phone == founder, MessageLog.status == "pending").order_by(MessageLog.id)
@@ -446,6 +450,7 @@ class Workflow:
             else:
                 path, _, caption = body.partition("|")
                 self._send(founder, case_id, document=Path(path), caption=caption)
+        return len(items)
 
 
 def founder_summary(

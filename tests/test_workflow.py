@@ -155,7 +155,7 @@ def test_outside_24h_window_holds_messages_until_founder_replies(workflow, chann
         assert s.scalars(select(MessageLog).where(MessageLog.status == "pending")).all()
     send(workflow, FOUNDER, "cases")
     kinds = [m["kind"] for m in to(channel, FOUNDER)]
-    assert kinds == ["template", "text", "text"]  # held notification, then the reply to "cases"
+    assert kinds == ["template", "text"]  # only the held notification; the reply just reopened the window
     assert "New enquiry" in to(channel, FOUNDER)[1]["body"]
 
     # Window open now: messages go straight through.
@@ -168,3 +168,19 @@ def test_outside_24h_window_holds_messages_until_founder_replies(workflow, chann
     before = len(to(channel, FOUNDER))
     send(workflow, CLIENT, "my budget is 30k")
     assert [m["kind"] for m in to(channel, FOUNDER)[before:]] == ["template"]
+
+
+def test_reply_to_template_is_not_treated_as_a_change_request(workflow, channel):
+    send(workflow, FOUNDER, "help")  # open the founder's window
+    send(workflow, CLIENT, "help please")
+    channel.has_service_window = True
+    with workflow.store.session.begin() as s:
+        s.get(Contact, FOUNDER).last_inbound = utcnow() - timedelta(hours=25)
+    send(workflow, CLIENT, "IB 36 psychology UK")  # draft is held behind the template
+    assert to(channel, FOUNDER)[-1]["kind"] == "template"
+    assert case(workflow).status == CaseStatus.IN_REVIEW
+
+    send(workflow, FOUNDER, "ok")
+    assert [m["kind"] for m in to(channel, FOUNDER)[-3:]] == ["text", "document", "document"]
+    assert workflow.research.revisions == []
+    assert case(workflow).status == CaseStatus.IN_REVIEW
