@@ -159,3 +159,14 @@ def test_agent_loop_handles_tools_pause_and_bad_submission(settings):
     assert seen[2]["role"] == "assistant"  # pause_turn: resent without adding a user message
     assert seen[3]["content"][0]["is_error"] is True  # empty list rejected
     assert meter.input_tokens == 4000 and meter.cost_usd > 0
+
+
+def test_make_client_modes(monkeypatch):
+    from edunxt.agents.llm import make_client
+
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://localhost:9")
+    assert str(make_client("sk-test").base_url).startswith("https://api.anthropic.com")
+    monkeypatch.setenv("EDUNXT_ANTHROPIC_AUTH", "proxy")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    client = make_client("")
+    assert str(client.base_url).startswith("https://api.anthropic.com") and client.api_key is None

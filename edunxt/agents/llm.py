@@ -22,12 +22,16 @@ WEB_SEARCH_PRICE = 10.00 / 1000  # per search request
 
 
 def make_client(api_key: str = "") -> anthropic.Anthropic:
-    if not api_key:
-        return anthropic.Anthropic()  # other credential sources, e.g. workload identity federation
-    # With an explicit key, talk to the public API even if the shell sets ANTHROPIC_BASE_URL for
-    # something else (Claude Code cloud sessions do). EDUNXT_ANTHROPIC_BASE_URL overrides.
+    # Talk to the public API even if the shell sets ANTHROPIC_BASE_URL for something else
+    # (Claude Code cloud sessions do). EDUNXT_ANTHROPIC_BASE_URL overrides.
     base_url = os.environ.get("EDUNXT_ANTHROPIC_BASE_URL", "https://api.anthropic.com")
-    return anthropic.Anthropic(api_key=api_key, base_url=base_url)
+    if api_key:
+        return anthropic.Anthropic(api_key=api_key, base_url=base_url)
+    if os.environ.get("EDUNXT_ANTHROPIC_AUTH") == "proxy":
+        # The key is added to each request by an egress proxy (e.g. a Claude Code cloud
+        # environment's "API credentials"), so send none ourselves.
+        return anthropic.Anthropic(base_url=base_url, default_headers={"X-Api-Key": anthropic.Omit()})
+    return anthropic.Anthropic()  # other credential sources, e.g. workload identity federation
 
 
 def load_prompt(name: str) -> str:

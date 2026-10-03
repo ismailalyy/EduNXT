@@ -101,7 +101,7 @@ The quick-tunnel URL changes every time it restarts, so update it in Meta when i
 ## Where the secrets live
 
 - **Locally:** `.env` (gitignored, so it is never committed).
-- **Claude Code cloud sessions:** add the same variables to the environment's settings, so `check-setup` and live tests can run there.
+- **Claude Code cloud sessions:** the environment reserves the name `ANTHROPIC_API_KEY`, so don't put the key under *Environment variables*. Instead add it under **API credentials → Add credential**: allowed website `api.anthropic.com`, custom header `x-api-key` (no prefix) with the key as value. Then run commands with `EDUNXT_ANTHROPIC_AUTH=proxy`, e.g. `EDUNXT_ANTHROPIC_AUTH=proxy python -m edunxt benchmark --cases canada_ee`. The agent then sends requests without a key and the environment adds it.
 - **Deployed:** the host's secret/environment-variable settings.
 - Never paste tokens into chat messages or commit them.
 
