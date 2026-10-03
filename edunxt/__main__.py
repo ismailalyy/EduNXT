@@ -47,6 +47,15 @@ def cmd_benchmark(args) -> None:
     client = make_client(settings.anthropic_api_key)
     intake = IntakeAgent(client, settings.intake_model)
 
+    render = render_pdfs
+    try:
+        import weasyprint  # noqa: F401  (needs Pango, which Windows lacks by default)
+    except (ImportError, OSError) as exc:
+        print(f"⚠️  PDF rendering unavailable ({type(exc).__name__}); measuring cost and quality without PDFs.\n")
+
+        def render(*_args, **_kwargs):
+            return None
+
     def make_research(partners_csv):
         return ResearchAgent(client, settings.research_model, partners_csv, settings.research_effort)
 
@@ -54,7 +63,7 @@ def cmd_benchmark(args) -> None:
         settings,
         intake,
         make_research,
-        render_pdfs,
+        render,
         case_ids=args.cases.split(",") if args.cases else None,
         with_partners=args.with_partners,
         parallel=args.parallel,
