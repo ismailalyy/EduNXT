@@ -146,6 +146,15 @@ def test_drafting_agent_uses_only_the_lists(lists):
     assert client.calls[0]["model"] == "claude-sonnet-5-5" and "tools" not in client.calls[0]  # no web access
 
 
+def test_drafting_agent_shows_local_fee_only_when_chosen_and_available(lists):
+    unis, sch = lists
+    toronto, mcgill = _id(unis, "University of Toronto"), _id(unis, "McGill University")
+    picks = [Pick(id=mcgill, fee_basis="local"), Pick(id=toronto, fee_basis="local")]  # Toronto has no fees_local
+    draft = DraftingAgent(FakeParseClient(Selection(picks=picks)), "m", unis, sch).draft(CANADA_EE, 10, UsageMeter())
+    assert (draft.universities[0].fees, draft.universities[0].fee_basis) == ("Quebec CA$3,118", "local")
+    assert (draft.universities[1].fees, draft.universities[1].fee_basis) == ("CA$70,060", "international")
+
+
 def test_drafting_agent_revision_sends_current_selection(lists):
     unis, sch = lists
     toronto, mcgill = _id(unis, "University of Toronto"), _id(unis, "McGill University")

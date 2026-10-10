@@ -5,13 +5,14 @@ import hmac
 import json
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 
 from edunxt.agents.llm import UsageMeter
-from edunxt.agents.schemas import CaseDraft, ScholarshipRow, StudentProfile
+from edunxt.agents.schemas import REQUIRED_PROFILE_FIELDS, CaseDraft, Scholarship, ScholarshipRow, StudentProfile
 from edunxt.app import create_app
 from edunxt.channels.whatsapp import parse_webhook, verify_signature
-from edunxt.documents.render import render_html
+from edunxt.documents.render import points, render_html
 from edunxt.sample import sample_case
 from edunxt.tools.partners import load_partners, search_partners, validate_partners
 
@@ -23,6 +24,8 @@ def test_profile_merge_and_completeness():
     p = StudentProfile(curriculum="IB", countries=["United Kingdom"])
     assert not p.is_complete
     p = p.merge(StudentProfile(predicted_grades="36", intended_course="Psychology", countries=[]))
+    assert not p.is_complete and p.missing(REQUIRED_PROFILE_FIELDS) == ["nationality"]  # decides local vs international fees
+    p = p.merge(StudentProfile(nationality="Egyptian"))
     assert p.is_complete and p.countries == ["United Kingdom"]
     p = p.merge(StudentProfile(notes="wants Scotland")).merge(StudentProfile(notes="needs scholarship"))
     assert p.notes == "wants Scotland; needs scholarship"
@@ -113,6 +116,33 @@ def test_render_html(settings):
     draft = CaseDraft(universities=draft.universities[:2], scholarships=[ScholarshipRow(university="Durham University")])
     html = render_html("scholarships", profile, draft)
     assert "SCHOLARSHIP OPTIONS" in html and "Durham University" in html
+    assert "Nationality:</label><div>Egyptian" in html and "Fees Shown:</label><div>International" in html
+
+
+def test_points_split_long_text_into_labelled_bullets():
+    text = "IB: 36 points (6,6,6 HL; no 3s); Math AA HL; English: IELTS 6.5; Other: interview"
+    assert points(text) == [("IB", "36 points (6,6,6 HL; no 3s)"), ("", "Math AA HL"), ("English", "IELTS 6.5"), ("Other", "interview")]
+    assert points("") == [] and points("Not published") == [("", "Not published")]
+
+
+def test_requirements_and_eligibility_render_as_bullets(settings):
+    profile, draft = sample_case(settings)
+    draft.universities[0].requirements = "IB: 36; English: IELTS 6.5"
+    html = render_html("universities", profile, draft)
+    assert '<li><b>IB:</b> 36</li><li><b>English:</b> IELTS 6.5</li>' in html
+    sch = Scholarship(name="Award", eligibility="International students; merit-based", deadline="Jan 2027")
+    draft = CaseDraft(universities=draft.universities[:1], scholarships=[ScholarshipRow(university=draft.universities[0].university, scholarships=[sch])])
+    html = render_html("scholarships", profile, draft)
+    assert "<li>International students</li><li>merit-based</li><li><b>Deadline:</b> Jan 2027</li>" in html
+
+
+def test_long_lists_continue_onto_a_second_page(settings):
+    weasyprint = pytest.importorskip("weasyprint")
+    profile, draft = sample_case(settings)
+    long_req = "; ".join(f"Point {i}: " + "detail " * 12 for i in range(8))
+    draft.universities = [u.model_copy(update={"requirements": long_req}) for u in draft.universities * 3][:12]
+    pages = weasyprint.HTML(string=render_html("universities", profile, draft)).render().pages
+    assert len(pages) > 1
 
 
 def test_make_client_modes(monkeypatch):

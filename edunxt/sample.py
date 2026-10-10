@@ -15,6 +15,7 @@ def sample_case(settings: Settings) -> tuple[StudentProfile, CaseDraft]:
         intended_course="Psychology",
         degree_level="Bachelor's (BSc)",
         countries=["United Kingdom"],
+        nationality="Egyptian",
     )
     rows = load_partners(settings.partners_csv)
     universities = [

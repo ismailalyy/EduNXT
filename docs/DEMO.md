@@ -38,7 +38,7 @@ Set up a split screen: client phone on the left, founder phone on the right (mir
 | 1 | **Client** sends: `salam, 3ayez a3raf 3an el services beta3etkom` | A Franco-Arabic message, as real students write. |
 | 2 | **Client** receives the English welcome and questionnaire within seconds | "Instant reply at 2 a.m., while the founders are at their day jobs." |
 | 3 | **Founder** receives *🆕 New enquiry EN-0001* with an English translation | The founder is kept informed, but doesn't have to act. |
-| 4 | **Client** sends: `ana Khaled, IB predicted 36, HL Maths 6 Physics 6 Chemistry 6, 3ayez adros electrical engineering fe Canada` | The profile is complete, so drafting starts. |
+| 4 | **Client** sends: `ana Khaled, IB predicted 36, HL Maths 6 Physics 6 Chemistry 6, 3ayez adros electrical engineering fe Canada, ana masry` | The profile is complete (nationality decides international or local fees), so drafting starts. |
 | 5 | **Founder** receives *✅ Profile complete … ⏳ Drafting* | |
 | 6 | *(short wait)* | The agent picks from EduNXT's own university list. No web research per student, so it's fast and cheap. |
 | 7 | **Founder** receives the summary, *University options* PDF and *Scholarships* PDF | Open both PDFs: EduNXT's own template, ready to forward. |

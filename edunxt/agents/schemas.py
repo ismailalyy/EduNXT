@@ -6,8 +6,9 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-# Fields the Research Agent needs before it can draft a useful list.
-REQUIRED_PROFILE_FIELDS = ("intended_course", "countries", "curriculum", "predicted_grades")
+# Fields the Drafting Agent needs before it can draft a useful list. Nationality decides
+# whether the student pays the international or the local (home / domestic / EU) fee.
+REQUIRED_PROFILE_FIELDS = ("intended_course", "countries", "curriculum", "predicted_grades", "nationality")
 
 PROFILE_QUESTIONS = {
     "student_name": "Student's full name",
@@ -89,7 +90,8 @@ class UniversityRow(BaseModel):
     university: str
     country: str
     course: str = Field(description="Exact programme title, e.g. 'BSc (Hons) Psychology (4 years)'.")
-    fees: str = Field(description="Annual international tuition with currency symbol, e.g. '£32,350'.")
+    fees: str = Field(description="Annual tuition the student pays, with currency symbol, e.g. '£32,350'.")
+    fee_basis: Literal["international", "local"] = "international"
     requirements: str = Field(description="Entry requirements expressed in the student's curriculum.")
     partner: bool = False
     source_url: str = ""

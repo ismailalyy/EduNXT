@@ -17,7 +17,7 @@ from sqlalchemy import func, select
 
 from .agents.intake import IntakeAgent, welcome_message
 from .agents.llm import UsageMeter
-from .agents.schemas import CaseDraft, StudentProfile
+from .agents.schemas import REQUIRED_PROFILE_FIELDS, CaseDraft, StudentProfile
 from .channels.base import Channel, InboundMessage, SendError
 from .config import Settings
 from .documents.render import render_pdfs
@@ -311,7 +311,7 @@ class Workflow:
         if status == CaseStatus.DRAFTING:
             self.store.enqueue("draft", {"case_id": case_id})
             return self._reply(founder, f"🆕 Created {ref}:\n{profile.summary()}\n\n⏳ Drafting now.", case_id)
-        missing = ", ".join(m.replace("_", " ") for m in profile.missing(("intended_course", "countries", "curriculum", "predicted_grades")))
+        missing = ", ".join(m.replace("_", " ") for m in profile.missing(REQUIRED_PROFILE_FIELDS))
         self._reply(founder, f"🆕 Created {ref}:\n{profile.summary()}\n\nStill need: {missing}. Reply to this message with them.", case_id)
 
     def _add_profile_details(self, founder: str, case_id: int, details: str) -> None:
@@ -329,7 +329,7 @@ class Workflow:
         if ready:
             self.store.enqueue("draft", {"case_id": case_id})
             return self._reply(founder, f"✅ {ref} profile complete:\n{profile.summary()}\n\n⏳ Drafting now.", case_id)
-        missing = ", ".join(m.replace("_", " ") for m in profile.missing(("intended_course", "countries", "curriculum", "predicted_grades")))
+        missing = ", ".join(m.replace("_", " ") for m in profile.missing(REQUIRED_PROFILE_FIELDS))
         self._reply(founder, f"Updated {ref}:\n{profile.summary()}\n\nStill need: {missing}.", case_id)
 
     # ================================================================== research jobs

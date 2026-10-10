@@ -43,6 +43,7 @@ class FakeIntake:
                 predicted_grades="36",
                 intended_course="Psychology",
                 countries=["United Kingdom"],
+                nationality="Egyptian",
             )
         if "budget" in low:
             intent = "profile_info"
