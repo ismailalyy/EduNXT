@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block body %}
+<h2>RECOMMENDED UNIVERSITIES</h2>
+<table>
+  <thead><tr><th>#</th><th>University</th><th>Course</th><th>Fees</th><th>Requirements{% if curriculum %} ({{ curriculum }}){% endif %}</th></tr></thead>
+  <tbody>
+  {% for u in universities %}
+    <tr>
+      <td class="num">{{ loop.index }}</td>
+      <td class="uni" style="width:22%">{{ u.university }}</td>
+      <td style="width:21%">{{ u.course }}</td>
+      <td style="width:9%">{{ u.fees }}</td>
+      <td>{{ u.requirements }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

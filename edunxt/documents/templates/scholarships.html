@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block body %}
+<h2>SCHOLARSHIP OPPORTUNITIES</h2>
+<table>
+  <thead><tr><th>#</th><th>University</th><th>Scholarship</th><th>Value</th><th>Eligibility &amp; Deadline</th></tr></thead>
+  <tbody>
+  {% for row in rows %}
+    <tr>
+      <td class="num">{{ loop.index }}</td>
+      <td class="uni" style="width:22%">{{ row.university }}</td>
+      {% if row.scholarships %}
+      <td style="width:24%">{% for s in row.scholarships %}<div class="sch"><b>{{ s.name }}</b></div>{% endfor %}</td>
+      <td style="width:14%">{% for s in row.scholarships %}<div class="sch">{{ s.value or "Not published" }}</div>{% endfor %}</td>
+      <td>{% for s in row.scholarships %}<div class="sch">{{ s.eligibility }}{% if s.deadline %}<br><i>Deadline: {{ s.deadline }}</i>{% endif %}</div>{% endfor %}</td>
+      {% else %}
+      <td></td><td></td><td></td>
+      {% endif %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+{% block disclaimer %}This document is prepared by EduNXT consultants. Scholarship availability, values and deadlines are subject to change.{% endblock %}
