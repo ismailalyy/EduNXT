@@ -8,9 +8,9 @@
     <tr>
       <td class="num">{{ loop.index }}</td>
       <td class="uni" style="width:22%">{{ u.university }}</td>
-      <td style="width:21%">{{ u.course }}</td>
-      <td style="width:9%">{{ u.fees }}</td>
-      <td>{{ u.requirements }}</td>
+      <td style="width:19%">{{ u.course }}</td>
+      <td style="width:11%">{{ u.fees }}{% if u.fee_basis == "local" %}<span class="basis">Local fee</span>{% endif %}</td>
+      <td>{% set pts = u.requirements | points %}{% if pts | length > 1 %}<ul class="pts">{% for label, text in pts %}<li>{% if label %}<b>{{ label }}:</b> {% endif %}{{ text }}</li>{% endfor %}</ul>{% else %}{{ u.requirements }}{% endif %}</td>
     </tr>
   {% endfor %}
   </tbody>

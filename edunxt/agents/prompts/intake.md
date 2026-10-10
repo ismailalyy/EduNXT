@@ -16,6 +16,7 @@ For each message:
   - Normalize curricula: "IB", "A-Level", "American Diploma", "IGCSE", "Thanaweya Amma" (Egyptian national secondary certificate), "French Baccalaureate", "German Abitur".
   - Keep grades in the student's own format, e.g. "IB predicted 36 (HL Bio 6, Chem 6, Psych 6)" or "Thanaweya Amma 97%".
   - `countries`: English country names, e.g. ["United Kingdom", "Netherlands"]. "England", "Scotland" and "Wales" map to "United Kingdom".
+  - `nationality`: the nationality adjective in English, e.g. "Egyptian"; list every nationality of a dual citizen, e.g. "Egyptian, Canadian". "Masry" / "مصري" means "Egyptian".
   - `budget`: keep the amount and currency, and say if it is per year or in total, e.g. "£30,000 per year".
   - `notes`: any other useful preference (city, campus type, scholarship need, foundation year, a sibling already abroad, ...).
 

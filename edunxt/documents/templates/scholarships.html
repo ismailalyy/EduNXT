@@ -11,7 +11,7 @@
       {% if row.scholarships %}
       <td style="width:24%">{% for s in row.scholarships %}<div class="sch"><b>{{ s.name }}</b></div>{% endfor %}</td>
       <td style="width:14%">{% for s in row.scholarships %}<div class="sch">{{ s.value or "Not published" }}</div>{% endfor %}</td>
-      <td>{% for s in row.scholarships %}<div class="sch">{{ s.eligibility }}{% if s.deadline %}<br><i>Deadline: {{ s.deadline }}</i>{% endif %}</div>{% endfor %}</td>
+      <td>{% for s in row.scholarships %}<div class="sch"><ul class="pts">{% for label, text in s.eligibility | points %}<li>{% if label %}<b>{{ label }}:</b> {% endif %}{{ text }}</li>{% endfor %}{% if s.deadline %}<li><b>Deadline:</b> {{ s.deadline }}</li>{% endif %}</ul></div>{% endfor %}</td>
       {% else %}
       <td></td><td></td><td></td>
       {% endif %}

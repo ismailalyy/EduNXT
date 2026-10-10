@@ -4,17 +4,20 @@
 <meta charset="utf-8">
 <title>EduNXT · {{ badge }}</title>
 <style>
-  @page { size: A4; margin: 0; }
+  /* Long lists flow onto more pages: margins on every page but the first, whose header is full-bleed. */
+  @page { size: A4; margin: 10mm 0; }
+  @page :first { margin-top: 0; }
   :root { --navy: #0c1445; --cyan: #2bb3d9; --row: #f2f4fa; --field: #eef0f7; --ink: #1b2350; --muted: #5d6488; }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: "DejaVu Sans", Helvetica, Arial, sans-serif; color: var(--ink); font-size: 8.4pt; }
-  .page { min-height: 297mm; display: flex; flex-direction: column; }
+  /* Block layout, not flex: WeasyPrint clips a flex container at the first page instead of continuing it. */
+  .page { display: block; }
   header { background: var(--navy); color: #fff; padding: 8mm 9mm 6mm; position: relative; border-bottom: 3px solid var(--cyan); }
   header h1 { margin: 0; font-size: 21pt; letter-spacing: .5px; }
   header .tag { color: var(--cyan); font-size: 7pt; letter-spacing: 2.5px; font-weight: bold; margin-top: 2px; }
   header .badge { display: inline-block; background: var(--cyan); color: #fff; font-weight: bold; letter-spacing: 2px; font-size: 8pt; padding: 5px 10px; margin-top: 8px; }
   header img { position: absolute; right: 9mm; top: 6mm; width: 15mm; }
-  main { padding: 6mm 9mm 4mm; flex: 1; }
+  main { padding: 6mm 9mm 4mm; }
   h2 { font-size: 10pt; letter-spacing: .5px; margin: 4mm 0 4mm; padding-bottom: 3px; border-bottom: 2px solid var(--cyan); display: inline-block; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 4mm; row-gap: 2.5mm; }
   .field label { display: block; font-weight: bold; font-size: 7pt; margin-bottom: 1.2mm; }
@@ -22,6 +25,12 @@
   table { width: 100%; border-collapse: collapse; margin-top: 1mm; }
   th { background: var(--navy); color: #fff; text-align: left; font-size: 7pt; padding: 2.4mm 2mm; }
   td { padding: 2.4mm 2mm; vertical-align: top; font-size: 7pt; border-bottom: 1px solid #e3e6f0; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; }
+  ul.pts { margin: 0; padding-left: 3mm; }
+  ul.pts li { margin: 0 0 .8mm; }
+  ul.pts li b { display: inline; font-weight: bold; }
+  .basis { display: block; color: var(--muted); font-size: 6pt; margin-top: .8mm; }
   tbody tr:nth-child(even) td { background: var(--row); }
   td.uni { font-weight: bold; }
   td.num { width: 6mm; color: var(--muted); }
@@ -30,7 +39,7 @@
   .sch b { display: block; }
   .stamp { text-align: center; margin: 6mm 0 0; }
   .stamp span { background: var(--navy); color: var(--cyan); font-weight: bold; letter-spacing: 3px; font-size: 7pt; padding: 2mm 3.5mm; border-radius: 2px; }
-  footer { background: var(--navy); color: #fff; padding: 4mm 3mm; display: flex; align-items: center; justify-content: space-between; font-size: 6.6pt; }
+  footer { break-inside: avoid; background: var(--navy); color: #fff; padding: 4mm 3mm; display: flex; align-items: center; justify-content: space-between; font-size: 6.6pt; }
   footer .mid { text-align: center; }
   footer .mid b { display: block; font-size: 7.4pt; margin-bottom: 1mm; }
   footer .mid small { color: #9aa3c9; font-size: 5.4pt; }

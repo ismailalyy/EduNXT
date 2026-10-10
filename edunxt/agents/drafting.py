@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from typing import Literal
 
 import anthropic
 from pydantic import BaseModel, Field
@@ -29,6 +30,9 @@ class DraftingError(RuntimeError):
 
 class Pick(BaseModel):
     id: int
+    fee_basis: Literal["international", "local"] = Field(
+        default="international", description="'local' only if the student's nationality qualifies for the row's fees_local."
+    )
     note: str = Field(default="", description="Anything the founder should double-check about this row.")
 
 
@@ -134,12 +138,14 @@ class DraftingAgent:
             if pick.id in seen:
                 continue
             seen.add(pick.id)
+            local = pick.fee_basis == "local" and bool(row.get("fees_local"))
             universities.append(
                 UniversityRow(
                     university=row["university"],
                     country=row["country"],
                     course=row["course"],
-                    fees=row.get("fees") or "Not yet in EduNXT's list",
+                    fees=(row["fees_local"] if local else row.get("fees")) or "Not yet in EduNXT's list",
+                    fee_basis="local" if local else "international",
                     requirements=row.get("requirements") or NO_REQUIREMENTS,
                     partner=bool(row.get("partner")),
                     source_url=row.get("url", ""),

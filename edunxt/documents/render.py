@@ -14,13 +14,49 @@ STATIC = Path(__file__).parent / "static"
 
 _env = Environment(loader=PackageLoader("edunxt.documents", "templates"), autoescape=select_autoescape(["html"]))
 
+_LABEL = re.compile(r"^([A-Z][\w .'/&-]{0,24}):\s+(.*)$", re.S)
 
-def _student_fields(profile: StudentProfile, phone: str | None, today: date) -> list[tuple[str, str]]:
+
+def points(text: str | None) -> list[tuple[str, str]]:
+    """Split list text such as "IB: 36; English: IELTS 6.5 (min 6.0; any band)" into (label, text) bullets.
+
+    Parts are separated by "; " outside brackets; a short leading "Label:" becomes the bullet's label.
+    """
+    parts, depth, start, text = [], 0, 0, (text or "").strip()
+    for i, ch in enumerate(text):
+        depth += ch in "([" and 1 or ch in ")]" and -1 or 0
+        if ch == ";" and depth <= 0:
+            parts.append(text[start:i])
+            start = i + 1
+    parts.append(text[start:])
+    out = []
+    for part in (p.strip() for p in parts):
+        if part:
+            m = _LABEL.match(part)
+            out.append((m.group(1), m.group(2)) if m else ("", part))
+    return out
+
+
+_env.filters["points"] = points
+
+
+def _fees_shown(draft: CaseDraft) -> str:
+    bases = {u.fee_basis for u in draft.universities}
+    if bases == {"local"}:
+        return "Local (home / domestic / EU)"
+    if "local" in bases:
+        return "Local where eligible, otherwise international"
+    return "International"
+
+
+def _student_fields(profile: StudentProfile, draft: CaseDraft, phone: str | None, today: date) -> list[tuple[str, str]]:
     return [
         ("Student Name", profile.student_name or ""),
         ("Date", today.strftime("%d %B %Y")),
         ("Desired Major / Field of Study", profile.intended_course or ""),
         ("Degree Level", profile.degree_level or ""),
+        ("Nationality", profile.nationality or ""),
+        ("Fees Shown", _fees_shown(draft)),
         ("Preferred Country", ", ".join(profile.countries)),
         ("Budget Range (if applicable)", profile.budget or ""),
         ("Contact Email", profile.email or ""),
@@ -38,7 +74,7 @@ def render_html(kind: str, profile: StudentProfile, draft: CaseDraft, phone: str
     today = today or date.today()
     common = {
         "logo": (STATIC / "logo.svg").as_uri(),
-        "student_fields": _student_fields(profile, phone, today),
+        "student_fields": _student_fields(profile, draft, phone, today),
     }
     if kind == "universities":
         return _env.get_template("university_options.html").render(
