@@ -57,7 +57,7 @@ def test_full_happy_path(workflow, channel):
     c = case(workflow)
     assert c.version == 2 and c.status == CaseStatus.IN_REVIEW
     assert [u["university"] for u in c.draft["universities"]] == ["University of Leeds", "UCL"]
-    assert workflow.research.revisions == ["replace Sheffield with UCL"]
+    assert workflow.drafter.revisions == ["replace Sheffield with UCL"]
     assert any("v2 revised" in m["body"] for m in to(channel, FOUNDER))
 
     # 4. Founder approves.
@@ -96,7 +96,7 @@ def test_case_reference_in_text(workflow, channel):
     send(workflow, CLIENT, "help please")
     send(workflow, CLIENT, "IB 36 psychology UK")
     send(workflow, FOUNDER, "#EN-0001 replace Sheffield with UCL")
-    assert workflow.research.revisions == ["replace Sheffield with UCL"]
+    assert workflow.drafter.revisions == ["replace Sheffield with UCL"]
 
 
 def test_ambiguous_founder_message_asks_which_case(workflow, channel):
@@ -106,7 +106,7 @@ def test_ambiguous_founder_message_asks_which_case(workflow, channel):
     send(workflow, "201000000002", "IB 36 psychology UK")
     send(workflow, FOUNDER, "remove Leeds")
     assert "Which case" in to(channel, FOUNDER)[-1]["body"]
-    assert workflow.research.revisions == []
+    assert workflow.drafter.revisions == []
 
 
 def test_round_robin_assignment(settings, channel):
@@ -129,7 +129,7 @@ def test_founder_manual_case(workflow, channel):
 
 def test_failed_draft_can_be_retried(workflow, channel):
     calls = {"n": 0}
-    original = workflow.research.draft
+    original = workflow.drafter.draft
 
     def flaky(*args):
         calls["n"] += 1
@@ -137,7 +137,7 @@ def test_failed_draft_can_be_retried(workflow, channel):
             raise RuntimeError("boom")
         return original(*args)
 
-    workflow.research.draft = flaky
+    workflow.drafter.draft = flaky
     send(workflow, CLIENT, "help")
     send(workflow, CLIENT, "IB 36 psychology UK")
     assert case(workflow).status == CaseStatus.FAILED
@@ -182,5 +182,15 @@ def test_reply_to_template_is_not_treated_as_a_change_request(workflow, channel)
 
     send(workflow, FOUNDER, "ok")
     assert [m["kind"] for m in to(channel, FOUNDER)[-3:]] == ["text", "document", "document"]
-    assert workflow.research.revisions == []
+    assert workflow.drafter.revisions == []
     assert case(workflow).status == CaseStatus.IN_REVIEW
+
+
+def test_founder_research_command_updates_lists(workflow, channel):
+    send(workflow, FOUNDER, "research add 2 Dutch electrical engineering bachelor's under €15k")
+    assert workflow.researcher.requests == ["add 2 Dutch electrical engineering bachelor's under €15k"]
+    replies = [m["body"] for m in to(channel, FOUNDER)]
+    assert replies[0].startswith("🔎 Researching")
+    assert "2 universities added" in replies[1] and "1 searches, 1 pages read" in replies[1]
+    send(workflow, FOUNDER, "research")
+    assert "Send *research* followed by" in to(channel, FOUNDER)[-1]["body"]

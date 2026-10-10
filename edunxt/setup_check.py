@@ -5,7 +5,7 @@ from __future__ import annotations
 import secrets
 
 from .config import Settings
-from .tools.partners import validate_partners
+from .tools.partners import load_partners, load_scholarships, validate_partners
 
 OK, BAD, WARN = "✅", "❌", "⚠️ "
 
@@ -28,6 +28,8 @@ def check_setup(settings: Settings, send_test_to: str | None = None) -> bool:
             model=settings.intake_model, max_tokens=16, messages=[{"role": "user", "content": "Reply with: ok"}]
         )
         report(True, f"Anthropic API reachable ({settings.intake_model})")
+        client.models.retrieve(settings.draft_model)
+        report(True, f"Drafting model available ({settings.draft_model})")
         client.models.retrieve(settings.research_model)
         report(True, f"Research model available ({settings.research_model})")
     except Exception as exc:
@@ -63,7 +65,15 @@ def check_setup(settings: Settings, send_test_to: str | None = None) -> bool:
     else:
         report(False, "WEBHOOK_VERIFY_TOKEN", f"Pick any random string, e.g. WEBHOOK_VERIFY_TOKEN={secrets.token_urlsafe(24)}")
     problems = validate_partners(settings.partners_csv)
-    report(not problems, f"Partner sheet {settings.partners_csv.name}", "; ".join(problems[:5]))
+    report(not problems, f"University list {settings.partners_csv.name}", "; ".join(problems[:5]))
+    rows = load_partners(settings.partners_csv)
+    no_req = sum(1 for r in rows if not (r.get("requirements") or "").strip())
+    if rows and no_req:
+        report(None, f"{no_req} of {len(rows)} universities have no entry requirements",
+               'Drafts will say "please confirm" for those. A founder can send e.g. "research fill in the entry requirements for the Canada rows".')
+    scholarships = load_scholarships(settings.scholarships_csv)
+    report(True if scholarships else None, f"Scholarship list {settings.scholarships_csv.name}: {len(scholarships)} entries",
+           "" if scholarships else 'Empty, so Scholarships PDFs will be blank. Send e.g. "research find scholarships for the Canada engineering universities".')
 
     print("\nAll set!" if all_ok else "\nFix the ❌ items above, then run this again.")
     return all_ok
