@@ -28,16 +28,23 @@ log = logging.getLogger(__name__)
 STOPWORDS = {"university", "of", "the", "de", "di", "college", "school", "and", "&", "—", "-", "la"}
 
 
-def _name_tokens(name: str) -> set[str]:
-    name = re.sub(r"\(([^)]*)\)", r" \1 ", name.lower())
+def _name_tokens(name: str, keep_brackets: bool = True) -> set[str]:
+    name = name.lower()
+    # "(UBC)" or "(Vancouver)" may or may not be part of how a list names a university
+    name = re.sub(r"\(([^)]*)\)", r" \1 " if keep_brackets else " ", name)
     return {t for t in re.findall(r"[a-z0-9]+", name) if t not in STOPWORDS}
 
 
-def same_university(a: str, b: str) -> bool:
-    ta, tb = _name_tokens(a), _name_tokens(b)
+def _tokens_match(ta: set[str], tb: set[str]) -> bool:
     if not ta or not tb:
         return False
     return ta <= tb or tb <= ta or len(ta & tb) / len(ta | tb) >= 0.6
+
+
+def same_university(a: str, b: str) -> bool:
+    return any(
+        _tokens_match(_name_tokens(a, ka), _name_tokens(b, kb)) for ka in (True, False) for kb in (True, False)
+    )
 
 
 @dataclass

@@ -15,6 +15,9 @@ def test_same_university():
     assert same_university("Universidad Europea de Valencia", "Universidad Europea")
     assert not same_university("University of Toronto", "University of Ottawa")
     assert not same_university("Politecnico di Milano", "Politecnico di Torino")
+    # seen in the first live run: same university, different bracketed suffix
+    assert same_university("University of British Columbia (Vancouver)", "University of British Columbia (UBC)")
+    assert not same_university("University of Toronto (St. George)", "University of Ottawa (Main)")
 
 
 def test_overlap():
