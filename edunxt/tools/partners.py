@@ -10,7 +10,8 @@ import csv
 from pathlib import Path
 
 COLUMNS = ["university", "country", "course", "degree_level", "fees", "requirements", "scholarships", "partner", "url"]
-# Optional extra columns (e.g. deadline, notes) are passed to the agent unchanged.
+# Optional extra columns (e.g. fees_local, deadline, notes, sources) are passed to the agent unchanged.
+# `fees` is the annual international (non-EU / overseas) fee; `fees_local` is the home / domestic / EU fee.
 
 # Common aliases so "UK" or "England" in a profile still matches "United Kingdom" rows.
 COUNTRY_ALIASES = {
