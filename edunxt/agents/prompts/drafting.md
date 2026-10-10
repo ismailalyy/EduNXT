@@ -5,7 +5,8 @@ You receive the student's profile and the rows of EduNXT's list for the student'
 How to choose:
 - **The course must fit** what the student wants to study. Programme names vary ("Digital Systems & Design" can suit an electrical-engineering student), so judge by substance, not wording. Rows marked `course_match: false` usually don't fit.
 - **Requirements must be reachable** with the student's predicted grades. Include a few ambitious and a few safer options. If a row has no requirements recorded, you may still choose it, but mention that in its `note`.
-- **Fees must fit the budget** when one is given. An option slightly over budget is acceptable if you flag it in `note`.
+- **Fees must fit the budget** when one is given. An option slightly over budget is acceptable if you flag it in `note`. In the list, `fees` is the international fee, which is what EduNXT's Egyptian students normally pay; `fees_local` is the home, domestic or EU fee, which applies only if the student's nationality qualifies. Mention it in `note` when it does.
+- A row whose `notes` start with "Unverified:" has values a founder couldn't confirm on an official page. You may choose it, but say what to double-check in its `note`.
 - **Partners first:** rows with `partner: true` pay commission. Include every one that genuinely fits.
 - **Order** the selection from most to least competitive, as a consultant would present it.
 - **Size:** choose up to the number of universities requested. If fewer rows fit, return fewer. Never pad the list with poor fits.

@@ -92,7 +92,7 @@ class DraftingAgent:
 
     @staticmethod
     def _rows_json(candidates: list[dict]) -> str:
-        keep = ("id", "university", "country", "course", "degree_level", "fees", "requirements", "partner", "deadline", "notes", "course_match")
+        keep = ("id", "university", "country", "course", "degree_level", "fees", "fees_local", "requirements", "partner", "deadline", "notes", "course_match")
         return "\n".join(json.dumps({k: r.get(k) for k in keep if r.get(k) not in (None, "")}, ensure_ascii=False) for r in candidates)
 
     @staticmethod
@@ -143,7 +143,10 @@ class DraftingAgent:
                     requirements=row.get("requirements") or NO_REQUIREMENTS,
                     partner=bool(row.get("partner")),
                     source_url=row.get("url", ""),
-                    confidence="high" if row.get("requirements") and row.get("fees") else "medium",
+                    confidence=(
+                        "low" if "unverified" in (row.get("notes") or "").lower()
+                        else "high" if row.get("requirements") and row.get("fees") else "medium"
+                    ),
                     note=pick.note,
                 )
             )

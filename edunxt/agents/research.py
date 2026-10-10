@@ -46,10 +46,11 @@ def _strict(name: str, description: str, properties: dict) -> dict:
 
 
 _STR = {"type": "string"}
+UNIVERSITY_FIELDS = ("university", "country", "course", "degree_level", "fees", "fees_local", "requirements", "url", "deadline", "notes", "sources")
 UNIVERSITY_UPDATE = {
     "type": "object",
-    "properties": {k: _STR for k in ("university", "country", "course", "degree_level", "fees", "requirements", "url", "deadline", "notes")},
-    "required": ["university", "country", "course", "degree_level", "fees", "requirements", "url", "deadline", "notes"],
+    "properties": {k: _STR for k in UNIVERSITY_FIELDS},
+    "required": list(UNIVERSITY_FIELDS),
     "additionalProperties": False,
 }
 SCHOLARSHIP_UPDATE = {

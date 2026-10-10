@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 import json
-import shutil
 from types import SimpleNamespace
 
 import pytest
@@ -17,10 +16,18 @@ USAGE = SimpleNamespace(input_tokens=1000, output_tokens=100, cache_read_input_t
                         cache_creation_input_tokens=0, server_tool_use=None)
 
 
+FIXED_LIST = """university,country,course,degree_level,fees,fees_local,requirements,scholarships,partner,url,deadline,notes,sources
+University of Toronto,Canada,BASc Electrical & Computer Engineering,Bachelor's,"CA$70,060",,,,yes,,"Jan 15, 2027",QS 2026 #29,
+McGill University,Canada,BEng Electrical Engineering,Bachelor's,"CA$65,168","Quebec CA$3,118",IB: 35-38,,yes,https://mcgill.ca,"Jan 15, 2027","Unverified: fee for 2027",https://mcgill.ca/fees
+University of Edinburgh,United Kingdom,BSc (Hons) Psychology,Bachelor's,"£40,900",,IB: 37,,no,https://ed.ac.uk,,,
+Politecnico di Milano,Italy,Engineering Science BSc,Bachelor's,"≈€4,000",,,,yes,,,,
+"""
+
+
 @pytest.fixture
-def lists(settings, tmp_path):
+def lists(tmp_path):
     unis = tmp_path / "universities.csv"
-    shutil.copy(settings.partners_csv, unis)
+    unis.write_text(FIXED_LIST, encoding="utf-8")
     sch = tmp_path / "scholarships.csv"
     sch.write_text("university,name,value,eligibility,deadline,url,last_checked\n"
                    "University of Toronto,Lester B. Pearson Scholarship,Full tuition,Outstanding international students,Nov 2026,https://example.edu/pearson,2026-10-10\n",
@@ -128,12 +135,14 @@ def test_drafting_agent_uses_only_the_lists(lists):
     assert [u.university for u in draft.universities] == ["University of Toronto", "McGill University"]  # 999 ignored
     assert draft.universities[0].fees == "CA$70,060" and draft.universities[0].requirements == NO_REQUIREMENTS
     assert draft.universities[0].partner is True and draft.universities[0].note == "reach"
+    assert draft.universities[1].requirements == "IB: 35-38" and draft.universities[1].confidence == "low"  # "Unverified:" note
     assert draft.scholarships_for("University of Toronto")[0].name == "Lester B. Pearson Scholarship"
     assert draft.scholarships_for("McGill University") == []
     assert "Few safe options." in draft.founder_notes
 
     brief = client.calls[0]["messages"][0]["content"]
     assert "University of Toronto" in brief and "University of Edinburgh" not in brief  # only Canada rows sent
+    assert "Quebec CA$3,118" in brief  # fees_local is shown to the model
     assert client.calls[0]["model"] == "claude-sonnet-5-5" and "tools" not in client.calls[0]  # no web access
 
 

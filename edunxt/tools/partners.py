@@ -17,7 +17,9 @@ from pathlib import Path
 
 COLUMNS = ["university", "country", "course", "degree_level", "fees", "requirements", "scholarships", "partner", "url"]
 # Optional extra columns are passed to the agents unchanged; these are written by the Research Agent.
-EXTRA_COLUMNS = ["deadline", "notes", "last_checked"]
+# `fees` is the annual international (non-EU / overseas) fee; `fees_local` is the home / domestic / EU fee.
+# A `notes` entry starting "Unverified:" names values not confirmed on an official page.
+EXTRA_COLUMNS = ["fees_local", "deadline", "notes", "sources", "last_checked"]
 SCHOLARSHIP_COLUMNS = ["university", "name", "value", "eligibility", "deadline", "url", "last_checked"]
 
 # Common aliases so "UK" or "England" in a profile still matches "United Kingdom" rows.
