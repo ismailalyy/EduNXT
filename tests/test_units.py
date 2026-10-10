@@ -170,3 +170,22 @@ def test_make_client_modes(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     client = make_client("")
     assert str(client.base_url).startswith("https://api.anthropic.com") and client.api_key is None
+
+
+def test_make_client_sends_workspace_header(monkeypatch):
+    import httpx2
+
+    from edunxt.agents.llm import make_client
+
+    monkeypatch.setenv("ANTHROPIC_WORKSPACE_ID", "wrkspc_test")
+    seen = {}
+
+    def handler(request):
+        seen.update(request.headers)
+        return httpx2.Response(200, json={"id": "m", "type": "message", "role": "assistant", "model": "claude-haiku-4-5",
+                                          "content": [{"type": "text", "text": "ok"}], "stop_reason": "end_turn",
+                                          "usage": {"input_tokens": 1, "output_tokens": 1}})
+
+    client = make_client("sk-test").with_options(http_client=httpx2.Client(transport=httpx2.MockTransport(handler)))
+    client.messages.create(model="claude-haiku-4-5", max_tokens=5, messages=[{"role": "user", "content": "hi"}])
+    assert seen["anthropic-workspace-id"] == "wrkspc_test"

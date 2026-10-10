@@ -25,12 +25,15 @@ def make_client(api_key: str = "") -> anthropic.Anthropic:
     # Talk to the public API even if the shell sets ANTHROPIC_BASE_URL for something else
     # (Claude Code cloud sessions do). EDUNXT_ANTHROPIC_BASE_URL overrides.
     base_url = os.environ.get("EDUNXT_ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+    # Organization-scoped keys must name the workspace to bill each request to.
+    workspace = os.environ.get("ANTHROPIC_WORKSPACE_ID", "").strip()
+    headers = {"anthropic-workspace-id": workspace} if workspace else {}
     if api_key:
-        return anthropic.Anthropic(api_key=api_key, base_url=base_url)
+        return anthropic.Anthropic(api_key=api_key, base_url=base_url, default_headers=headers or None)
     if os.environ.get("EDUNXT_ANTHROPIC_AUTH") == "proxy":
         # The key is added to each request by an egress proxy (e.g. a Claude Code cloud
         # environment's "API credentials"), so send none ourselves.
-        return anthropic.Anthropic(base_url=base_url, default_headers={"X-Api-Key": anthropic.Omit()})
+        return anthropic.Anthropic(base_url=base_url, default_headers={**headers, "X-Api-Key": anthropic.Omit()})
     return anthropic.Anthropic()  # other credential sources, e.g. workload identity federation
 
 
