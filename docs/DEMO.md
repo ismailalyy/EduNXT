@@ -73,3 +73,12 @@ Output goes to `out/benchmark/`:
 - PDFs and JSON for each case.
 
 These are the numbers the deck uses.
+
+## Cost model
+
+```bash
+python scripts/build_cost_model.py   # rebuilds docs/cost_model.xlsx, AI-cost inputs taken from out/benchmark/results.csv
+```
+
+`docs/cost_model.xlsx` shows monthly cost for 25–500 new enquiries on WhatsApp and on Instagram. Every assumption (message counts, Meta's Egypt rates, VAT, share of enquiries drafted, average fees) is an editable blue cell on the **Inputs** sheet. Without benchmark results the AI-cost cells stay blank (yellow) and the totals show messaging fees only. Open it in Excel or LibreOffice so the formulas recalculate.
+
