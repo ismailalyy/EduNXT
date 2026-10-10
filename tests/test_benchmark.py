@@ -15,6 +15,9 @@ def test_same_university():
     assert same_university("Universidad Europea de Valencia", "Universidad Europea")
     assert not same_university("University of Toronto", "University of Ottawa")
     assert not same_university("Politecnico di Milano", "Politecnico di Torino")
+    # seen in the first live run: same university, different bracketed suffix
+    assert same_university("University of British Columbia (Vancouver)", "University of British Columbia (UBC)")
+    assert not same_university("University of Toronto (St. George)", "University of Ottawa (Main)")
 
 
 def test_overlap():
@@ -45,3 +48,26 @@ def test_run_benchmark_with_fakes(settings):
     summary = (out / "summary.md").read_text(encoding="utf-8")
     assert "Khaled: Electrical Engineering, Canada" in summary and "Matched 0 of 10" in summary
     assert (out / "canada_ee" / "draft_v2.json").exists()
+
+
+def test_run_benchmark_research_mode(settings):
+    from edunxt.agents.research import ResearchOutcome
+    from edunxt.tools.partners import upsert_universities
+
+    class Researcher:
+        def __init__(self, unis, sch, log_path):
+            self.unis = unis
+
+        def update(self, request, meter):
+            assert "Electrical Engineering" in request and "Canada" in request
+            upsert_universities(self.unis, [{"university": "University of Toronto", "country": "Canada",
+                                             "course": "BASc Electrical & Computer Engineering"},
+                                            {"university": "Concordia University", "country": "Canada", "course": "BEng EE"}])
+            return ResearchOutcome("ok", universities_added=2)
+
+    out = run_benchmark(settings, None, None, fake_render, case_ids=["canada_ee"], make_researcher=Researcher)
+    assert out.name == "benchmark_research"
+    summary = (out / "summary.md").read_text(encoding="utf-8")
+    assert "| research | 1 |" in summary and "Matched 1 of 10" in summary and "Agent-only: Concordia University" in summary
+    # the real list is untouched; the agent wrote to the case's own copy
+    assert "Concordia" not in settings.partners_csv.read_text(encoding="utf-8")

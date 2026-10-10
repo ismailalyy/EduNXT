@@ -39,7 +39,7 @@ def cmd_check_setup(args) -> None:
 def cmd_benchmark(args) -> None:
     from .agents.intake import IntakeAgent
     from .agents.llm import make_client
-    from .agents.research import ResearchAgent
+    from .app import build_drafter, build_researcher
     from .benchmark import run_benchmark
     from .documents.render import render_pdfs
 
@@ -56,17 +56,20 @@ def cmd_benchmark(args) -> None:
         def render(*_args, **_kwargs):
             return None
 
-    def make_research(partners_csv):
-        return ResearchAgent(client, settings.research_model, partners_csv, settings.research_effort)
+    def make_drafter(universities_csv):
+        return build_drafter(settings, client, universities_csv)
+
+    def make_researcher(universities_csv, scholarships_csv, log_path):
+        return build_researcher(settings, client, universities_csv, scholarships_csv, log_path)
 
     out = run_benchmark(
         settings,
         intake,
-        make_research,
+        make_drafter,
         render,
         case_ids=args.cases.split(",") if args.cases else None,
-        with_partners=args.with_partners,
         parallel=args.parallel,
+        make_researcher=make_researcher if args.research else None,
     )
     print((out / "summary.md").read_text(encoding="utf-8"))
     print(f"\nFull results: {out}")
@@ -149,7 +152,7 @@ def main(argv: list[str] | None = None) -> None:
 
     p = sub.add_parser("benchmark", help="run real cases and measure cost, time and overlap with consultants")
     p.add_argument("--cases", default="", help="comma-separated case ids (default: all)")
-    p.add_argument("--with-partners", action="store_true", help="keep each case's own rows in the partner sheet")
+    p.add_argument("--research", action="store_true", help="measure the Research Agent (list updates) instead of per-student drafts")
     p.add_argument("--parallel", type=int, default=2, help="cases to run at once")
     p.set_defaults(func=cmd_benchmark)
 

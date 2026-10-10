@@ -82,6 +82,18 @@ class FakeResearch:
         return CaseDraft(universities=unis, scholarships=current.scholarships), "Replaced Sheffield with UCL."
 
 
+class FakeResearcher:
+    def __init__(self):
+        self.requests = []
+
+    def update(self, request, meter):
+        from edunxt.agents.research import ResearchOutcome
+
+        self.requests.append(request)
+        return ResearchOutcome("Added 2 Dutch programmes.", universities_added=2,
+                               sources=[{"tool": "web_search", "query": "q"}, {"tool": "web_fetch", "url": "u"}])
+
+
 def fake_render(profile, draft, out_dir: Path, ref, version, phone=None):
     out_dir.mkdir(parents=True, exist_ok=True)
     paths = []
@@ -109,4 +121,4 @@ def channel():
 
 @pytest.fixture
 def workflow(settings, channel):
-    return Workflow(settings, Store(settings.database_url), channel, FakeIntake(), FakeResearch(), render=fake_render)
+    return Workflow(settings, Store(settings.database_url), channel, FakeIntake(), FakeResearch(), FakeResearcher(), render=fake_render)

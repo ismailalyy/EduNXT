@@ -70,11 +70,14 @@ python -m edunxt chat
   | country | United Kingdom |
   | course | Psychology BSc |
   | degree_level | Bachelor's |
-  | fees | £32,750 |
+  | fees | £32,750 (2026/27) (international / overseas fee) |
+  | fees_local | £9,790 (2026/27) (home, domestic or EU fee; optional) |
   | requirements | IB: 35 points; A-Level: AAA |
   | scholarships | International Excellence Award £5,000 (optional) |
   | partner | yes / no (yes = pays EduNXT commission; these are always included when they fit) |
   | url | https://www.leeds.ac.uk/... |
+  | notes | anything else; start with "Unverified:" for values not confirmed on an official page (optional) |
+  | sources | official pages the fees and requirements came from, separated by spaces (optional) |
 
   The sample rows are the 10 UK Psychology universities from your example list, marked `partner=no`. Replace them with your real partners.
 

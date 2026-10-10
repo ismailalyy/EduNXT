@@ -17,7 +17,6 @@ from sqlalchemy import func, select
 
 from .agents.intake import IntakeAgent, welcome_message
 from .agents.llm import UsageMeter
-from .agents.research import ResearchAgent
 from .agents.schemas import CaseDraft, StudentProfile
 from .channels.base import Channel, InboundMessage, SendError
 from .config import Settings
@@ -27,7 +26,7 @@ from .store import Case, CaseStatus, Contact, MessageLog, Store, utcnow
 log = logging.getLogger(__name__)
 
 INBOUND_JOBS = ("inbound",)
-RESEARCH_JOBS = ("draft", "revise")
+RESEARCH_JOBS = ("draft", "revise", "research")
 SERVICE_WINDOW = timedelta(hours=23, minutes=30)  # a little under WhatsApp's 24h, to be safe
 
 CASE_REF = re.compile(r"#?\bEN-?(\d{1,6})\b", re.IGNORECASE)
@@ -39,6 +38,7 @@ FOUNDER_HELP = """*EduNXT agent commands*
 • *approve*: mark the case final
 • *cases*: list open cases
 • *new <student details>*: start a case yourself (e.g. for Instagram enquiries)
+• *research <request>*: update EduNXT's university and scholarship lists from the web, e.g. "research add 3 Dutch electrical engineering bachelor's under €15k". Drafts only ever use these lists.
 • *retry #EN-0012*: re-run a failed draft
 • *redo #EN-0012*: re-draft from scratch
 • *help*: this message"""
@@ -51,14 +51,16 @@ class Workflow:
         store: Store,
         channel: Channel,
         intake: IntakeAgent,
-        research: ResearchAgent,
+        drafter,
+        researcher=None,
         render: Callable[..., tuple[Path, Path]] = render_pdfs,
     ):
         self.settings = settings
         self.store = store
         self.channel = channel
         self.intake = intake
-        self.research = research
+        self.drafter = drafter  # builds student documents from EduNXT's lists (no web)
+        self.researcher = researcher  # updates those lists from the web, on a founder's request
         self.render = render
         self.founders = settings.founder_numbers
 
@@ -91,6 +93,8 @@ class Workflow:
             self._do_draft(payload["case_id"])
         elif kind == "revise":
             self._do_revise(payload["case_id"], payload["instruction"])
+        elif kind == "research":
+            self._do_research(payload["founder"], payload["request"])
         else:
             raise ValueError(f"unknown job kind {kind}")
 
@@ -203,6 +207,12 @@ class Workflow:
             return self._reply(founder, FOUNDER_HELP)
         if low in ("cases", "status", "list", "open"):
             return self._reply(founder, self._case_list(founder))
+        if low == "research" or low.startswith(("research ", "research:")):
+            request = text.split(maxsplit=1)[1].lstrip(": ").strip() if " " in text else ""
+            if not request:
+                return self._reply(founder, 'Send *research* followed by what to add or check, e.g. "research add 3 Dutch electrical engineering bachelor\'s under €15k".')
+            self.store.enqueue("research", {"founder": founder, "request": request})
+            return self._reply(founder, "🔎 Researching. I'll update EduNXT's lists and report back (usually a few minutes).")
         if low.startswith(("new ", "new:", "draft ", "draft:")):
             return self._manual_case(founder, text.split(maxsplit=1)[1].lstrip(": ") if " " in text else "")
 
@@ -330,7 +340,7 @@ class Workflow:
             profile, founder, ref = StudentProfile(**case.profile), case.founder_phone, case.ref
         meter = UsageMeter()
         try:
-            draft = self.research.draft(profile, self.settings.list_size, meter)
+            draft = self.drafter.draft(profile, self.settings.list_size, meter)
         except Exception as exc:
             return self._fail(case_id, meter, f"Drafting {ref} failed: {exc}")
         self._deliver(case_id, draft, meter, headline="draft ready for review")
@@ -341,12 +351,30 @@ class Workflow:
             profile, current, ref = StudentProfile(**case.profile), CaseDraft(**(case.draft or {})), case.ref
         meter = UsageMeter()
         try:
-            draft, summary = self.research.revise(profile, current, instruction, meter)
+            draft, summary = self.drafter.revise(profile, current, instruction, meter)
         except Exception as exc:
             with self.store.session.begin() as s:
                 s.get(Case, case_id).status = CaseStatus.IN_REVIEW  # keep the previous version reviewable
             return self._fail(case_id, meter, f"Revising {ref} failed: {exc}. The previous version is unchanged; try rephrasing.", keep_status=True)
         self._deliver(case_id, draft, meter, headline="revised", changes=summary)
+
+    def _do_research(self, founder: str, request: str) -> None:
+        if self.researcher is None:
+            return self._reply(founder, "Research isn't set up on this server.")
+        meter = UsageMeter()
+        try:
+            outcome = self.researcher.update(request, meter)
+        except Exception as exc:
+            log.exception("research failed")
+            return self._reply(founder, f"⚠️ Research failed: {exc}. The lists are unchanged.")
+        searches = sum(1 for src in outcome.sources if src["tool"] == "web_search")
+        pages = sum(1 for src in outcome.sources if src["tool"] == "web_fetch")
+        self._reply(
+            founder,
+            f"✅ Lists updated: {outcome.describe()}.\n\n{outcome.summary}\n\n"
+            f"🔎 {searches} searches, {pages} pages read · 💲 est. ${meter.cost_usd:.2f}\n"
+            "To use the new entries in an open case, reply *redo #EN-…*.",
+        )
 
     def _fail(self, case_id: int, meter: UsageMeter, text: str, keep_status: bool = False) -> None:
         log.error(text)

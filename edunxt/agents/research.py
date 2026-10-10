@@ -1,247 +1,212 @@
-"""Research Agent: drafts the university list and the scholarship list, and revises both.
+"""Research Agent: keeps EduNXT's university and scholarship lists up to date, on a founder's request.
 
-Only founders see its output. Scholarships are a sub-task: one small parallel call per
-university, so the two documents always describe the same list.
+It is the only part of the system that uses the web. Student drafts are built from the lists
+by the Drafting Agent, so research cost is paid once per list update, not once per student.
+Every web search and page it reads is recorded, so its sources can be reviewed and tuned.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-from concurrent.futures import ThreadPoolExecutor
-from datetime import date
+from dataclasses import dataclass, field
+from datetime import date, datetime, timezone
+from pathlib import Path
 from typing import Any, Callable
 
 import anthropic
 
-from ..tools.partners import load_partners, search_partners
+from ..tools.partners import (
+    load_partners,
+    load_scholarships,
+    scholarships_for,
+    search_partners,
+    upsert_scholarships,
+    upsert_universities,
+)
 from .llm import UsageMeter, load_prompt
-from .schemas import CaseDraft, Scholarship, ScholarshipRow, StudentProfile, UniversityRow
 
 log = logging.getLogger(__name__)
 
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 MAX_TURNS = 40
-SCHOLARSHIP_WORKERS = 5
 
 
 class ResearchError(RuntimeError):
     pass
 
 
-def _strict(name: str, description: str, properties: dict, required: list[str] | None = None) -> dict:
+def _strict(name: str, description: str, properties: dict) -> dict:
     return {
         "name": name,
         "description": description,
         "strict": True,
-        "input_schema": {
-            "type": "object",
-            "properties": properties,
-            "required": required or list(properties),
-            "additionalProperties": False,
-        },
+        "input_schema": {"type": "object", "properties": properties, "required": list(properties), "additionalProperties": False},
     }
 
 
 _STR = {"type": "string"}
-UNIVERSITY_ITEM = {
+UNIVERSITY_FIELDS = ("university", "country", "course", "degree_level", "fees", "fees_local", "requirements", "url", "deadline", "notes", "sources")
+UNIVERSITY_UPDATE = {
     "type": "object",
-    "properties": {
-        "university": _STR,
-        "country": _STR,
-        "course": _STR,
-        "fees": _STR,
-        "requirements": _STR,
-        "partner": {"type": "boolean"},
-        "source_url": _STR,
-        "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
-        "note": _STR,
-    },
-    "required": ["university", "country", "course", "fees", "requirements", "partner", "source_url", "confidence", "note"],
+    "properties": {k: _STR for k in UNIVERSITY_FIELDS},
+    "required": list(UNIVERSITY_FIELDS),
     "additionalProperties": False,
 }
-SCHOLARSHIP_ITEM = {
+SCHOLARSHIP_UPDATE = {
     "type": "object",
-    "properties": {"name": _STR, "value": _STR, "eligibility": _STR, "deadline": _STR, "source_url": _STR},
-    "required": ["name", "value", "eligibility", "deadline", "source_url"],
+    "properties": {k: _STR for k in ("university", "name", "value", "eligibility", "deadline", "url")},
+    "required": ["university", "name", "value", "eligibility", "deadline", "url"],
     "additionalProperties": False,
 }
 
-LOOKUP_TOOL = _strict(
-    "lookup_partner_universities",
-    "Search EduNXT's own university sheet. Rows with partner=true pay EduNXT commission and should be "
-    "included whenever they fit the student. Countries may be regions such as 'Europe' or 'EU'. Returns a JSON "
-    "list of rows in those countries; course_match=true rows share a word with the course, but check the others "
-    "too, since programme names vary.",
+LOOKUP_UNIVERSITIES = _strict(
+    "lookup_universities",
+    "Show the rows EduNXT's university list already holds for some countries (regions such as 'Europe' work) "
+    "and a course. Returns JSON rows; course_match=false rows are other courses in those countries.",
     {"countries": {"type": "array", "items": _STR}, "course": _STR},
 )
-SUBMIT_LIST_TOOL = _strict(
-    "submit_university_list",
-    "Submit the final university shortlist. Call exactly once, when research is complete.",
-    {"universities": {"type": "array", "items": UNIVERSITY_ITEM}, "founder_notes": _STR},
+LOOKUP_SCHOLARSHIPS = _strict(
+    "lookup_scholarships",
+    "Show the scholarships EduNXT's list already holds for one university (exact name from the university list).",
+    {"university": _STR},
 )
-SUBMIT_REVISION_TOOL = _strict(
-    "submit_revision",
-    "Submit the complete revised university list. Call exactly once, when the changes are done.",
+SUBMIT_UPDATES = _strict(
+    "submit_updates",
+    "Save new or corrected university rows and scholarships to EduNXT's lists. Call exactly once, at the end. "
+    "Rows are matched on (university, course) and scholarships on (university, name); empty fields never "
+    "overwrite known values.",
     {
-        "universities": {"type": "array", "items": UNIVERSITY_ITEM},
-        "refresh_scholarships_for": {"type": "array", "items": _STR},
-        "scholarship_instructions": _STR,
-        "summary_of_changes": _STR,
+        "universities": {"type": "array", "items": UNIVERSITY_UPDATE},
+        "scholarships": {"type": "array", "items": SCHOLARSHIP_UPDATE},
+        "summary": _STR,
     },
 )
-SUBMIT_SCHOLARSHIPS_TOOL = _strict(
-    "submit_scholarships",
-    "Submit the scholarships for this university. Submit an empty list if none fit.",
-    {"scholarships": {"type": "array", "items": SCHOLARSHIP_ITEM}},
-)
 
 
-def _web_tools(searches: int, fetches: int) -> list[dict]:
-    return [
-        {"type": "web_search_20260209", "name": "web_search", "max_uses": searches},
-        {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": fetches},
-    ]
+@dataclass
+class ResearchOutcome:
+    summary: str
+    universities_added: int = 0
+    universities_updated: int = 0
+    scholarships_added: int = 0
+    scholarships_updated: int = 0
+    sources: list[dict] = field(default_factory=list)  # every web search / fetch the agent made
+
+    def describe(self) -> str:
+        return (
+            f"{self.universities_added} universities added, {self.universities_updated} updated; "
+            f"{self.scholarships_added} scholarships added, {self.scholarships_updated} updated"
+        )
 
 
 class ResearchAgent:
-    def __init__(self, client: anthropic.Anthropic, model: str, partners_csv, effort: str = "medium"):
+    def __init__(
+        self,
+        client: anthropic.Anthropic,
+        model: str,
+        universities_csv: Path,
+        scholarships_csv: Path,
+        effort: str = "medium",
+        max_searches: int = 15,
+        max_fetches: int = 20,
+        fetch_max_tokens: int = 8000,
+        allowed_domains: list[str] | None = None,
+        log_path: Path | None = None,
+    ):
         self.client = client
         self.model = model
         self.effort = effort
-        self.partners_csv = partners_csv
-        self.universities_prompt = load_prompt("universities")
-        self.revision_prompt = self.universities_prompt + load_prompt("revision")
-        self.scholarships_prompt = load_prompt("scholarships")
+        self.universities_csv = Path(universities_csv)
+        self.scholarships_csv = Path(scholarships_csv)
+        self.max_searches = max_searches
+        self.max_fetches = max_fetches
+        self.fetch_max_tokens = fetch_max_tokens
+        self.allowed_domains = [d for d in (allowed_domains or []) if d]
+        self.log_path = Path(log_path) if log_path else None
+        self.system = load_prompt("research")
+
+    def _web_tools(self) -> list[dict]:
+        search = {"type": "web_search_20260209", "name": "web_search", "max_uses": self.max_searches}
+        fetch = {
+            "type": "web_fetch_20260209",
+            "name": "web_fetch",
+            "max_uses": self.max_fetches,
+            # Long pages are the main cost driver: each page is re-read on every later step.
+            "max_content_tokens": self.fetch_max_tokens,
+        }
+        if self.allowed_domains:
+            search["allowed_domains"] = fetch["allowed_domains"] = self.allowed_domains
+        return [search, fetch]
 
     # ------------------------------------------------------------------ public API
 
-    def draft(self, profile: StudentProfile, list_size: int, meter: UsageMeter) -> CaseDraft:
-        brief = (
-            f"Today's date: {date.today().isoformat()}\n"
-            f"Number of universities required: {list_size}\n\n"
-            f"Student profile:\n{profile.summary()}"
-        )
-        result = self._agent_loop(
-            system=self.universities_prompt,
-            user=brief,
-            tools=[LOOKUP_TOOL, *_web_tools(20, 25), SUBMIT_LIST_TOOL],
-            submit=SUBMIT_LIST_TOOL["name"],
-            effort=self.effort,
-            meter=meter,
-        )
-        universities = [UniversityRow(**u) for u in result["universities"]]
-        scholarships = self._scholarships_for(profile, universities, meter)
-        return CaseDraft(universities=universities, scholarships=scholarships, founder_notes=result["founder_notes"])
+    def update(self, request: str, meter: UsageMeter, create: Callable[..., Any] | None = None) -> ResearchOutcome:
+        brief = f"Today's date: {date.today().isoformat()}\n\n<founder_request>\n{request}\n</founder_request>"
+        result, sources = self._agent_loop(brief, meter, create)
+        ua, uu = upsert_universities(self.universities_csv, result["universities"]) if result["universities"] else (0, 0)
+        sa, su = upsert_scholarships(self.scholarships_csv, result["scholarships"]) if result["scholarships"] else (0, 0)
+        outcome = ResearchOutcome(result["summary"], ua, uu, sa, su, sources)
+        self._write_log(request, outcome, meter)
+        return outcome
 
-    def revise(
-        self, profile: StudentProfile, current: CaseDraft, instruction: str, meter: UsageMeter
-    ) -> tuple[CaseDraft, str]:
-        brief = (
-            f"Today's date: {date.today().isoformat()}\n\n"
-            f"Student profile:\n{profile.summary()}\n\n"
-            f"Current draft (JSON):\n{current.model_dump_json(indent=1)}\n\n"
-            f"<founder_request>\n{instruction}\n</founder_request>"
-        )
-        result = self._agent_loop(
-            system=self.revision_prompt,
-            user=brief,
-            tools=[LOOKUP_TOOL, *_web_tools(12, 15), SUBMIT_REVISION_TOOL],
-            submit=SUBMIT_REVISION_TOOL["name"],
-            effort=self.effort,
-            meter=meter,
-        )
-        universities = [UniversityRow(**u) for u in result["universities"]]
-        previous = {u.university.strip().lower() for u in current.universities}
-        refresh = {name.strip().lower() for name in result["refresh_scholarships_for"]}
-        to_research = [
-            u for u in universities if u.university.strip().lower() not in previous or u.university.strip().lower() in refresh
-        ]
-        fresh = {
-            row.university.strip().lower(): row
-            for row in self._scholarships_for(profile, to_research, meter, result["scholarship_instructions"])
+    # ------------------------------------------------------------------ internals
+
+    def _write_log(self, request: str, outcome: ResearchOutcome, meter: UsageMeter) -> None:
+        if not self.log_path:
+            return
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "request": request,
+            "result": outcome.describe(),
+            "summary": outcome.summary,
+            "cost_usd": round(meter.cost_usd, 4),
+            "web_searches": meter.web_searches,
+            "sources": outcome.sources,
         }
-        scholarships = [
-            fresh.get(u.university.strip().lower())
-            or ScholarshipRow(university=u.university, scholarships=current.scholarships_for(u.university))
-            for u in universities
-        ]
-        draft = CaseDraft(universities=universities, scholarships=scholarships, founder_notes=current.founder_notes)
-        return draft, result["summary_of_changes"]
-
-    # ------------------------------------------------------------------ scholarships
-
-    def _scholarships_for(
-        self, profile: StudentProfile, universities: list[UniversityRow], meter: UsageMeter, hint: str = ""
-    ) -> list[ScholarshipRow]:
-        if not universities:
-            return []
-        with ThreadPoolExecutor(max_workers=SCHOLARSHIP_WORKERS) as pool:
-            rows = list(pool.map(lambda u: self._one_university_scholarships(profile, u, meter, hint), universities))
-        return rows
-
-    def _one_university_scholarships(
-        self, profile: StudentProfile, uni: UniversityRow, meter: UsageMeter, hint: str
-    ) -> ScholarshipRow:
-        sheet_hint = ""
-        for row in load_partners(self.partners_csv):
-            if row["university"].strip().lower() == uni.university.strip().lower() and row.get("scholarships"):
-                sheet_hint = f"\nEduNXT's sheet lists these scholarships for this university: {row['scholarships']}"
-        brief = (
-            f"Today's date: {date.today().isoformat()}\n"
-            f"University: {uni.university} ({uni.country})\nProgramme: {uni.course}\n"
-            f"Tuition: {uni.fees}\n\nStudent profile:\n{profile.summary()}{sheet_hint}"
-            + (f"\n\nFounder instructions: {hint}" if hint else "")
-        )
-        try:
-            result = self._agent_loop(
-                system=self.scholarships_prompt,
-                user=brief,
-                tools=[*_web_tools(4, 4), SUBMIT_SCHOLARSHIPS_TOOL],
-                submit=SUBMIT_SCHOLARSHIPS_TOOL["name"],
-                effort="low",
-                meter=meter,
-            )
-            items = [Scholarship(**s) for s in result["scholarships"]]
-        except ResearchError as exc:
-            log.warning("Scholarship research failed for %s: %s", uni.university, exc)
-            items = [Scholarship(name="(automatic search failed, please check manually)")]
-        return ScholarshipRow(university=uni.university, scholarships=items)
-
-    # ------------------------------------------------------------------ agent loop
+        with self.log_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
     def _handle_client_tool(self, name: str, args: dict) -> str:
-        if name == "lookup_partner_universities":
-            rows = search_partners(load_partners(self.partners_csv), args.get("countries", []), args.get("course", ""))
-            return json.dumps(rows[:40], ensure_ascii=False) if rows else "[] (no matching rows in the sheet)"
+        if name == "lookup_universities":
+            rows = search_partners(load_partners(self.universities_csv), args.get("countries", []), args.get("course", ""))
+            return json.dumps(rows[:60], ensure_ascii=False, default=str) if rows else "[] (nothing in the list yet)"
+        if name == "lookup_scholarships":
+            rows = scholarships_for(load_scholarships(self.scholarships_csv), args.get("university", ""))
+            return json.dumps(rows, ensure_ascii=False) if rows else "[] (no scholarships recorded)"
         raise ResearchError(f"unknown tool {name}")
 
-    def _agent_loop(
-        self,
-        system: str,
-        user: str,
-        tools: list[dict],
-        submit: str,
-        effort: str,
-        meter: UsageMeter,
-        create: Callable[..., Any] | None = None,
-    ) -> dict:
+    @staticmethod
+    def _record_sources(content, sources: list[dict]) -> None:
+        for block in content:
+            if getattr(block, "type", None) == "server_tool_use":
+                inp = block.input if isinstance(block.input, dict) else {}
+                if block.name == "web_search":
+                    sources.append({"tool": "web_search", "query": inp.get("query", "")})
+                elif block.name == "web_fetch":
+                    sources.append({"tool": "web_fetch", "url": inp.get("url", "")})
+
+    def _agent_loop(self, brief: str, meter: UsageMeter, create: Callable[..., Any] | None = None) -> tuple[dict, list[dict]]:
         create = create or self.client.beta.messages.create
-        messages: list[dict] = [{"role": "user", "content": user}]
+        tools = [LOOKUP_UNIVERSITIES, LOOKUP_SCHOLARSHIPS, *self._web_tools(), SUBMIT_UPDATES]
+        messages: list[dict] = [{"role": "user", "content": brief}]
+        sources: list[dict] = []
         nudges = 0
         for _ in range(MAX_TURNS):
             response = create(
                 model=self.model,
                 max_tokens=16000,
-                system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
+                system=[{"type": "text", "text": self.system, "cache_control": {"type": "ephemeral"}}],
                 tools=tools,
                 messages=messages,
                 thinking={"type": "adaptive"},
-                output_config={"effort": effort},
+                output_config={"effort": self.effort},
                 betas=[FALLBACK_BETA],
                 fallbacks="default",
             )
             meter.add(getattr(response, "model", self.model), response.usage)
+            self._record_sources(response.content, sources)
             if response.stop_reason == "refusal":
                 raise ResearchError("the model declined this request")
             messages.append({"role": "assistant", "content": response.content})
@@ -251,39 +216,42 @@ class ResearchAgent:
             tool_uses = [b for b in response.content if b.type == "tool_use"]
             if not tool_uses:
                 if response.stop_reason == "max_tokens" or nudges >= 2:
-                    raise ResearchError(f"no {submit} call (stop_reason={response.stop_reason})")
+                    raise ResearchError(f"no submit_updates call (stop_reason={response.stop_reason})")
                 nudges += 1
-                messages.append({"role": "user", "content": f"Please call `{submit}` now with your final answer."})
+                messages.append({"role": "user", "content": "Please call `submit_updates` now with your results."})
                 continue
 
             results, submitted = [], None
             for block in tool_uses:
                 args = block.input if isinstance(block.input, dict) else json.loads(block.input)
-                if block.name == submit:
-                    try:
-                        self._validate_submission(submit, args)
+                if block.name == SUBMIT_UPDATES["name"]:
+                    problem = self._check_submission(args)
+                    if problem:
+                        results.append({"type": "tool_result", "tool_use_id": block.id, "is_error": True, "content": problem})
+                    else:
                         submitted = args
-                        results.append({"type": "tool_result", "tool_use_id": block.id, "content": "Received."})
-                    except (ValueError, KeyError, TypeError) as exc:  # pydantic errors are ValueErrors
-                        results.append(
-                            {"type": "tool_result", "tool_use_id": block.id, "is_error": True, "content": f"Invalid submission: {exc}"}
-                        )
+                        results.append({"type": "tool_result", "tool_use_id": block.id, "content": "Saved."})
                 else:
                     try:
-                        content = self._handle_client_tool(block.name, args)
-                        results.append({"type": "tool_result", "tool_use_id": block.id, "content": content})
+                        results.append({"type": "tool_result", "tool_use_id": block.id, "content": self._handle_client_tool(block.name, args)})
                     except Exception as exc:  # report tool failures back to the model
                         results.append({"type": "tool_result", "tool_use_id": block.id, "is_error": True, "content": str(exc)})
             if submitted is not None:
-                return submitted
+                return submitted, sources
             messages.append({"role": "user", "content": results})
-        raise ResearchError(f"gave up after {MAX_TURNS} turns without {submit}")
+        raise ResearchError(f"gave up after {MAX_TURNS} turns without submit_updates")
 
     @staticmethod
-    def _validate_submission(submit: str, args: dict) -> None:
-        if submit == SUBMIT_SCHOLARSHIPS_TOOL["name"]:
-            [Scholarship(**s) for s in args["scholarships"]]
-            return
-        rows = [UniversityRow(**u) for u in args["universities"]]
-        if not rows:
-            raise ValueError("the university list is empty")
+    def _check_submission(args: dict) -> str:
+        try:
+            for u in args["universities"]:
+                if not (u["university"].strip() and u["country"].strip() and u["course"].strip()):
+                    return "Every university row needs university, country and course."
+            for s in args["scholarships"]:
+                if not (s["university"].strip() and s["name"].strip()):
+                    return "Every scholarship needs university and name."
+            if not args["summary"].strip():
+                return "Please include a short summary for the founder."
+        except (KeyError, TypeError, AttributeError) as exc:
+            return f"Invalid submission: {exc}"
+        return ""
